@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Taylor Household</title>
+<title>Simmonds-Taylor Household</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <style>
 :root {
@@ -31,7 +31,7 @@ header h1 { font-size: 17px; font-weight: 500; color: var(--text2); letter-spaci
 
 .tab-row { display: flex; gap: 3px; padding: 1.25rem 1.25rem 0; overflow-x: auto; scrollbar-width: none; }
 .tab-row::-webkit-scrollbar { display: none; }
-.tab { padding: 6px 13px; border-radius: 20px; font-size: 13px; cursor: pointer; background: transparent; border: 0.5px solid var(--border); color: var(--text3); white-space: nowrap; transition: all .15s; position: relative; }
+.tab { padding: 7px 14px; border-radius: 20px; font-size: 15px; cursor: pointer; background: transparent; border: 0.5px solid var(--border); color: var(--text3); white-space: nowrap; transition: all .15s; position: relative; }
 .tab:hover:not(.active) { background: var(--bg2); color: var(--text2); }
 .tab.active { background: var(--bg3); color: var(--text); border-color: var(--border2); font-weight: 500; }
 .tab.today::after { content: ''; position: absolute; bottom: 3px; left: 50%; transform: translateX(-50%); width: 4px; height: 4px; border-radius: 50%; background: #639922; }
@@ -47,7 +47,7 @@ header h1 { font-size: 17px; font-weight: 500; color: var(--text2); letter-spaci
 .prog-count { font-size: 12px; color: var(--text3); min-width: 28px; text-align: right; }
 
 .filter-row { display: flex; align-items: center; gap: 5px; margin-bottom: 1rem; }
-.filter { padding: 4px 12px; border-radius: 20px; font-size: 12px; cursor: pointer; border: 0.5px solid var(--border); background: transparent; color: var(--text3); transition: all .12s; }
+.filter { padding: 5px 14px; border-radius: 20px; font-size: 13px; cursor: pointer; border: 0.5px solid var(--border); background: transparent; color: var(--text3); transition: all .12s; }
 .filter.active { border-color: var(--border2); color: var(--text); background: var(--bg3); }
 .filter.adam.active { background: #0a2240; border-color: #185FA5; color: #85B7EB; }
 .filter.sophie.active { background: #2e0d1a; border-color: #993556; color: #ED93B1; }
@@ -58,19 +58,19 @@ header h1 { font-size: 17px; font-weight: 500; color: var(--text2); letter-spaci
 
 .tasks { display: grid; grid-template-columns: repeat(auto-fill, minmax(175px, 1fr)); gap: 7px; }
 
-.task { padding: 9px 11px; background: var(--bg2); border: 0.5px solid var(--border); border-radius: var(--radius); transition: border-color .15s; }
+.task { padding: 11px 13px; background: var(--bg2); border: 0.5px solid var(--border); border-radius: var(--radius); transition: border-color .15s; }
 .task:hover { border-color: var(--border2); }
 .task.done { opacity: .35; }
-.task-top { display: flex; align-items: flex-start; gap: 9px; cursor: pointer; }
-.check { width: 16px; height: 16px; border-radius: 4px; border: 1.5px solid var(--border3); flex-shrink: 0; margin-top: 2px; display: flex; align-items: center; justify-content: center; transition: all .15s; }
+.task-top { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
+.check { width: 20px; height: 20px; border-radius: 5px; border: 1.5px solid var(--border3); flex-shrink: 0; margin-top: 2px; display: flex; align-items: center; justify-content: center; transition: all .15s; }
 .check.on { background: var(--text); border-color: var(--text); }
 .cm { width: 8px; height: 5px; border-left: 1.5px solid #0f1117; border-bottom: 1.5px solid #0f1117; transform: rotate(-45deg) translate(1px,-1px); opacity: 0; }
 .check.on .cm { opacity: 1; }
-.task-label { font-size: 13px; color: var(--text); line-height: 1.4; flex: 1; }
+.task-label { font-size: 15px; color: var(--text); line-height: 1.4; flex: 1; }
 .task.done .task-label { text-decoration: line-through; }
 
 .task-meta { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 7px; padding-top: 7px; border-top: 0.5px solid var(--border); }
-.pill { font-size: 11px; padding: 2px 7px; border-radius: 20px; cursor: pointer; border: 0.5px solid var(--border); color: var(--text3); background: transparent; transition: all .12s; white-space: nowrap; }
+.pill { font-size: 12px; padding: 3px 8px; border-radius: 20px; cursor: pointer; border: 0.5px solid var(--border); color: var(--text3); background: transparent; transition: all .12s; white-space: nowrap; }
 .pill:hover { border-color: var(--border2); color: var(--text2); }
 .pill.adam { background: #0a2240; border-color: #185FA5; color: #85B7EB; }
 .pill.sophie { background: #2e0d1a; border-color: #993556; color: #ED93B1; }
@@ -92,7 +92,7 @@ header h1 { font-size: 17px; font-weight: 500; color: var(--text2); letter-spaci
 <body>
 
 <header>
-  <h1>Taylor Household</h1>
+  <h1>Simmonds-Taylor Household</h1>
   <div class="sync-dot" id="sync-dot"></div>
 </header>
 
