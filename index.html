@@ -158,16 +158,23 @@ textarea.notes-input::placeholder { color: var(--text3); }
   <span class="header-icon">🏠</span>
   <h1>Simmonds-Taylor</h1>
   <div class="sync-pill"><div class="sync-dot" id="sync-dot"></div><span id="sync-label">syncing</span></div>
-</header>
-
-<div class="tab-row" id="tab-row"></div>
-<div class="view" id="view"></div>
-
 <script>
 const SB_URL = 'https://qgphrpjgzlfjbzjubkbu.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFncGhycGpnemxmamJ6anVia2J1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1OTU2ODQsImV4cCI6MjA5NDE3MTY4NH0.EzZLs1PNQS9n39KZGkePioy8pkNf6AhR2461xySPBcg';
-let db = null;
-try { db = supabase.createClient(SB_URL, SB_KEY); } catch(e) { console.warn("Supabase init failed:", e); }
+const HEADERS = { 'apikey': SB_KEY, 'Authorization': 'Bearer '+SB_KEY, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' };
+
+async function sbLoad() {
+  const r = await fetch(`${SB_URL}/rest/v1/household_state?select=key,value`, { headers: HEADERS });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+async function sbSave(key, value) {
+  const r = await fetch(`${SB_URL}/rest/v1/household_state`, {
+    method: 'POST', headers: HEADERS,
+    body: JSON.stringify({ key, value })
+  });
+  if (!r.ok) throw new Error(await r.text());
+}
 
 const DAYS      = ['mon','tue','wed','thu','fri','sat','sun'];
 const DAY_NAMES = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
@@ -192,84 +199,60 @@ function weekStr(){
   const y=d.getFullYear(),w=Math.ceil(((d-new Date(y,0,1))/86400000+1)/7);
   return y+'-W'+String(w).padStart(2,'0');
 }
-
 function getTasks(period){
-  const def = DEFAULTS[period]||[];
-  const cust = S.custom_tasks[period]||[];
-  const del  = S.deleted_tasks[period]||[];
+  const def=DEFAULTS[period]||[], cust=S.custom_tasks[period]||[], del=S.deleted_tasks[period]||[];
   return [...def,...cust].filter(t=>!del.includes(slug(t)));
 }
 
-// ── State ──
 let S = {
   daily_chk:{}, weekly_chk:{}, monthly_chk:{}, yearly_chk:{},
   daily_tags:{}, weekly_tags:{}, monthly_tags:{}, yearly_tags:{},
   custom_tasks:{daily:[],weekly:[],monthly:[],yearly:[]},
   deleted_tasks:{daily:[],weekly:[],monthly:[],yearly:[]},
-  notes:{},
-  meta:{}
+  notes:{}, meta:{}
 };
-const ALL_KEYS = Object.keys(S);
 
-let current    = todayKey();
-let filterWho  = 'all';
-let unschedOpen= false;
-let editMode   = false;
-let addingIn   = null; // 'daily' | 'weekly' | 'monthly' | 'yearly' | 'unsched'
-let openDayMenu= null;
-let saveTimers = {};
+let current=todayKey(), filterWho='all', unschedOpen=false, editMode=false, addingIn=null, openDayMenu=null, saveTimers={};
 
-// ── Sync UI ──
 function setSyncDot(s){
   const dot=document.getElementById('sync-dot'), lbl=document.getElementById('sync-label');
   dot.className='sync-dot'+(s?' '+s:'');
   lbl.textContent=s==='live'?'live':s==='saving'?'saving…':'offline';
 }
 
-// ── Load / Save ──
 async function loadAll(){
-  if(!db){ autoReset(); render(); return; }
-  try{
-    const {data}=await db.from('household_state').select('key,value');
-    if(data) data.forEach(r=>{if(r.key in S) S[r.key]=r.value||S[r.key];});
-    // ensure arrays exist
+  try {
+    const rows = await sbLoad();
+    rows.forEach(r=>{ if(r.key in S) S[r.key]=r.value||S[r.key]; });
     ['daily','weekly','monthly','yearly'].forEach(p=>{
       S.custom_tasks[p]=S.custom_tasks[p]||[];
       S.deleted_tasks[p]=S.deleted_tasks[p]||[];
     });
     setSyncDot('live');
-  }catch(e){console.warn(e);}
+  } catch(e) { console.warn('Load error:',e); setSyncDot(''); }
   autoReset();
   render();
-  subscribeRT();
 }
 
 function scheduleSave(key){
   setSyncDot('saving');
   clearTimeout(saveTimers[key]);
   saveTimers[key]=setTimeout(async()=>{
-    try{if(!db) return; await db.from('household_state').upsert([{key,value:S[key]}]);setSyncDot('live');}
-    catch(e){console.warn(e);setSyncDot('');}
-  },600);
+    try { await sbSave(key, S[key]); setSyncDot('live'); }
+    catch(e) { console.warn('Save error:',e); setSyncDot(''); }
+  }, 600);
 }
 
 function autoReset(){
-  const today=todayStr(),week=weekStr();
+  const today=todayStr(), week=weekStr();
   let dirty=new Set();
   DAYS.forEach(d=>{
-    if(S.meta['dr_'+d]!==today){S.daily_chk[d]={};S.meta['dr_'+d]=today;dirty.add('daily_chk');dirty.add('meta');}
+    if(S.meta['dr_'+d]!==today){ S.daily_chk[d]={}; S.meta['dr_'+d]=today; dirty.add('daily_chk'); dirty.add('meta'); }
   });
-  if(S.meta.wr!==week){S.weekly_chk={};S.meta.wr=week;dirty.add('weekly_chk');dirty.add('meta');}
+  if(S.meta.wr!==week){ S.weekly_chk={}; S.meta.wr=week; dirty.add('weekly_chk'); dirty.add('meta'); }
   dirty.forEach(k=>scheduleSave(k));
 }
 
-function subscribeRT(){
-  db.channel('hh2').on('postgres_changes',{event:'*',schema:'public',table:'household_state'},p=>{
-    const r=p.new;if(r&&r.key&&r.key in S){S[r.key]=r.value||{};buildView();}
-  }).subscribe();
-}
-
-// ── Tabs ──
 function buildTabs(){
   const today=todayKey();
   document.getElementById('tab-row').innerHTML=
@@ -280,39 +263,31 @@ function buildTabs(){
     }).join('');
 }
 
-// ── Main view ──
 function buildView(){
   const el=document.getElementById('view');
   const isDay=DAYS.includes(current);
-
   if(isDay){
     const di=DAYS.indexOf(current);
     const todayIdx=(new Date().getDay()+6)%7;
     const d=new Date(); d.setDate(d.getDate()+(di-todayIdx));
-    const dateStr=d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'});
-
-    const dChk   = S.daily_chk[current]||{};
-    const wChk   = S.weekly_chk||{};
-    const wTags  = S.weekly_tags||{};
-    const dTags  = (S.daily_tags[current])||{};
-    const allDaily   = getTasks('daily');
-    const allWeekly  = getTasks('weekly');
-    const scheduled  = allWeekly.filter(t=>wTags[slug(t)]?.day===DAY_SHORT[di]);
-    const unscheduled= allWeekly.filter(t=>!wTags[slug(t)]?.day);
-
-    const visD=applyFilter(allDaily,dTags);
-    const visW=applyFilter(scheduled,wTags);
+    const dateStr=d.toLocaleDateString('en-GB',{day:'numeric',month:'short'});
+    const dChk=S.daily_chk[current]||{}, wChk=S.weekly_chk||{};
+    const wTags=S.weekly_tags||{}, dTags=S.daily_tags[current]||{};
+    const allDaily=getTasks('daily'), allWeekly=getTasks('weekly');
+    const scheduled=allWeekly.filter(t=>wTags[slug(t)]?.day===DAY_SHORT[di]);
+    const unscheduled=allWeekly.filter(t=>!wTags[slug(t)]?.day);
+    const visD=applyFilter(allDaily,dTags), visW=applyFilter(scheduled,wTags);
     const total=visD.length+visW.length;
     const done=visD.filter(t=>dChk[slug(t)]).length+visW.filter(t=>wChk[slug(t)]).length;
     const pct=total?Math.round(done/total*100):0;
     const allDone=total>0&&done===total;
-
     el.innerHTML=`
       <div class="day-hd">
         <span class="day-name">${DAY_EMOJI[di]} ${DAY_NAMES[di]}</span>
+        <span class="day-date">${dateStr}</span>
         <div class="day-prog">
-          <div class="prog-track"><div class="prog-fill${allDone?' done':''}" style="width:${pct}%"></div></div>
-          <span class="prog-count">${done+" / "+total}</span>
+          <div class="prog-track"><div class="prog-fill" style="width:${pct}%"></div></div>
+          <span class="prog-count">${done}/${total}</span>
         </div>
       </div>
       <div class="toolbar">
@@ -328,38 +303,29 @@ function buildView(){
       <div class="tasks" id="tl-daily"></div>
       ${addingIn==='daily'?addInputHtml('daily'):`<button class="add-task-btn" onclick="showAdd('daily')">＋ Add a task</button>`}
       ${scheduled.length||addingIn==='weekly'?`<div class="sec-label"><span class="sec-label-text">📋 This week</span></div><div class="tasks" id="tl-weekly"></div>${addingIn==='weekly'?addInputHtml('weekly'):`<button class="add-task-btn" onclick="showAdd('weekly')">＋ Add a task</button>`}`:''}
-      ${unscheduled.length?`
-        <button class="unsched-btn" onclick="toggleUnsched()">
-          <span class="arr${unschedOpen?' open':''}">▶</span> Unscheduled weekly (${unscheduled.length})
-        </button>
-        ${unschedOpen?`<div class="tasks" style="margin-top:.6rem" id="tl-unsched"></div>${addingIn==='unsched'?addInputHtml('weekly'):`<button class="add-task-btn" onclick="showAdd('weekly')">＋ Add a task</button>`}`:''}
-      `:''}
+      ${unscheduled.length?`<button class="unsched-btn" onclick="toggleUnsched()"><span class="arr${unschedOpen?' open':''}">▶</span> Unscheduled weekly (${unscheduled.length})</button>${unschedOpen?`<div class="tasks" style="margin-top:.6rem" id="tl-unsched"></div>${addingIn==='unsched'?addInputHtml('weekly'):`<button class="add-task-btn" onclick="showAdd('weekly')">＋ Add a task</button>`}`:''}`:''}
       <div class="notes-section">
         <div class="notes-label">📝 Notes for today</div>
-        <textarea class="notes-input" id="notes-input" placeholder="Anything to remember today…" onchange="saveNote('${current}')">${S.notes[current]||''}</textarea>
-      </div>
-    `;
+        <textarea class="notes-input" id="notes-input" placeholder="Anything to remember today…" oninput="scheduleNote('${current}')">${(S.notes[current]||'').replace(/</g,'&lt;')}</textarea>
+      </div>`;
     renderList('tl-daily',allDaily,dChk,dTags,'daily',false);
     if(scheduled.length) renderList('tl-weekly',scheduled,wChk,wTags,'weekly',true);
     if(unschedOpen&&unscheduled.length) renderList('tl-unsched',unscheduled,wChk,wTags,'weekly',true);
-
   } else {
     const isM=current==='monthly';
-    const tasks=getTasks(current);
-    const ck=current+'_chk', tk=current+'_tags';
+    const tasks=getTasks(current), ck=current+'_chk', tk=current+'_tags';
     const chk=S[ck]||{}, tgs=S[tk]||{};
     const vis=applyFilter(tasks,tgs);
     const done=vis.filter(t=>chk[slug(t)]).length;
     const pct=vis.length?Math.round(done/vis.length*100):0;
     const allDone=vis.length>0&&done===vis.length;
     const emoji=isM?'🗓️':'🌟';
-
     el.innerHTML=`
       <div class="day-hd">
         <span class="day-name">${emoji} ${current.charAt(0).toUpperCase()+current.slice(1)}</span>
         <div class="day-prog">
           <div class="prog-track"><div class="prog-fill" style="width:${pct}%"></div></div>
-          <span class="prog-count">${done+" / "+vis.length}</span>
+          <span class="prog-count">${done}/${vis.length}</span>
         </div>
       </div>
       <div class="toolbar">
@@ -375,22 +341,15 @@ function buildView(){
       ${addingIn===current?addInputHtml(current):`<button class="add-task-btn" onclick="showAdd('${current}')">＋ Add a task</button>`}
       <div class="notes-section">
         <div class="notes-label">📝 Notes</div>
-        <textarea class="notes-input" id="notes-input" placeholder="Anything to keep in mind…" onchange="saveNote('${current}')">${S.notes[current]||''}</textarea>
-      </div>
-    `;
+        <textarea class="notes-input" id="notes-input" placeholder="Anything to keep in mind…" oninput="scheduleNote('${current}')">${(S.notes[current]||'').replace(/</g,'&lt;')}</textarea>
+      </div>`;
     renderList('tl-period',tasks,chk,tgs,current,false);
   }
-
-  // re-focus add input if open
   if(addingIn) setTimeout(()=>document.getElementById('new-task-input')?.focus(),30);
 }
 
 function addInputHtml(period){
-  return `<div class="add-row">
-    <input id="new-task-input" class="add-input" type="text" placeholder="Task name…" onkeydown="if(event.key==='Enter')confirmAdd('${period}')">
-    <button class="add-confirm" onclick="confirmAdd('${period}')">✓</button>
-    <button class="add-cancel" onclick="cancelAdd()">✕</button>
-  </div>`;
+  return `<div class="add-row"><input id="new-task-input" class="add-input" type="text" placeholder="Task name…" onkeydown="if(event.key==='Enter')confirmAdd('${period}')"><button class="add-confirm" onclick="confirmAdd('${period}')">✓</button><button class="add-cancel" onclick="cancelAdd()">✕</button></div>`;
 }
 
 function applyFilter(tasks,tags){
@@ -403,8 +362,7 @@ function renderList(id,tasks,chk,tags,period,showDay){
   const vis=applyFilter(tasks,tags);
   if(!vis.length){el.innerHTML=`<div style="font-size:13px;color:var(--text3);padding:.25rem 0">No tasks here.</div>`;return;}
   el.innerHTML=vis.map(t=>{
-    const s=slug(t), isDone=!!chk[s], who=tags[s]?.who||null, day=tags[s]?.day||null;
-    const isCustom=!(DEFAULTS[period]||[]).includes(t);
+    const s=slug(t),isDone=!!chk[s],who=tags[s]?.who||null,day=tags[s]?.day||null;
     return `<div class="task${isDone?' done':''}">
       ${editMode?`<button class="del-btn" onclick="deleteTask('${period}','${t.replace(/'/g,"\\'")}')">×</button>`:''}
       <div class="task-top" onclick="toggle('${period}','${t.replace(/'/g,"\\'")}')">
@@ -415,13 +373,7 @@ function renderList(id,tasks,chk,tags,period,showDay){
         <button class="pill${who?' '+who:''}" onclick="cycleWho('${period}','${t.replace(/'/g,"\\'")}')">
           ${who?WHO_LABEL[who]:'+ who'}
         </button>
-        ${showDay?`<div class="day-wrap">
-          <button class="pill${day?' day-on':''}" onclick="toggleDayDD(event,'${s}')">${day||'+ day'}</button>
-          <div class="day-dd" id="dd_${s}" style="display:none">
-            <div class="day-opt${!day?' cur':''}" onclick="setDay(event,'${t.replace(/'/g,"\\'")}',null)">— clear</div>
-            ${DAY_SHORT.map(d=>`<div class="day-opt${day===d?' cur':''}" onclick="setDay(event,'${t.replace(/'/g,"\\'")}','${d}')">${d}</div>`).join('')}
-          </div>
-        </div>`:''}
+        ${showDay?`<div class="day-wrap"><button class="pill${day?' day-on':''}" onclick="toggleDayDD(event,'${s}')">${day||'+ day'}</button><div class="day-dd" id="dd_${s}" style="display:none"><div class="day-opt${!day?' cur':''}" onclick="setDay(event,'${t.replace(/'/g,"\\'")}',null)">— clear</div>${DAY_SHORT.map(d=>`<div class="day-opt${day===d?' cur':''}" onclick="setDay(event,'${t.replace(/'/g,"\\'")}','${d}')">${d}</div>`).join('')}</div></div>`:''}
       </div>
     </div>`;
   }).join('');
@@ -429,7 +381,6 @@ function renderList(id,tasks,chk,tags,period,showDay){
 
 function render(){ buildTabs(); buildView(); }
 
-// ── Actions ──
 window.setTab=k=>{current=k;filterWho='all';unschedOpen=false;editMode=false;addingIn=null;render();};
 window.setFilter=w=>{filterWho=w;buildTabs();buildView();};
 window.toggleUnsched=()=>{unschedOpen=!unschedOpen;buildView();};
@@ -441,11 +392,7 @@ window.toggle=(period,t)=>{
     if(!S.daily_chk[current]) S.daily_chk[current]={};
     S.daily_chk[current][s]=!S.daily_chk[current][s];
     scheduleSave('daily_chk');
-  } else {
-    const ck=period+'_chk';
-    S[ck][s]=!S[ck][s];
-    scheduleSave(ck);
-  }
+  } else { const ck=period+'_chk'; S[ck][s]=!S[ck][s]; scheduleSave(ck); }
   buildView();
 };
 
@@ -483,31 +430,28 @@ window.setDay=(e,t,day)=>{
   const dd=document.getElementById('dd_'+s);if(dd)dd.style.display='none';
   openDayMenu=null;buildView();
 };
-
 window.showAdd=section=>{addingIn=section;buildView();};
 window.cancelAdd=()=>{addingIn=null;buildView();};
 window.confirmAdd=period=>{
-  const inp=document.getElementById('new-task-input');
-  const val=inp?.value?.trim();
+  const val=document.getElementById('new-task-input')?.value?.trim();
   if(!val) return;
   S.custom_tasks[period]=[...(S.custom_tasks[period]||[]),val];
-  scheduleSave('custom_tasks');
-  addingIn=null;buildView();
+  scheduleSave('custom_tasks'); addingIn=null; buildView();
 };
-
 window.deleteTask=(period,t)=>{
-  const s=slug(t);
-  // remove from custom if custom
-  const ci=(S.custom_tasks[period]||[]).findIndex(x=>slug(x)===s);
-  if(ci>-1){ S.custom_tasks[period].splice(ci,1); scheduleSave('custom_tasks'); }
-  else { S.deleted_tasks[period]=[...(S.deleted_tasks[period]||[]),s]; scheduleSave('deleted_tasks'); }
+  const s=slug(t),ci=(S.custom_tasks[period]||[]).findIndex(x=>slug(x)===s);
+  if(ci>-1){S.custom_tasks[period].splice(ci,1);scheduleSave('custom_tasks');}
+  else{S.deleted_tasks[period]=[...(S.deleted_tasks[period]||[]),s];scheduleSave('deleted_tasks');}
   buildView();
 };
 
-window.saveNote=key=>{
-  const val=document.getElementById('notes-input')?.value||'';
-  S.notes[key]=val;
-  scheduleSave('notes');
+let noteTimers={};
+window.scheduleNote=key=>{
+  clearTimeout(noteTimers[key]);
+  noteTimers[key]=setTimeout(()=>{
+    S.notes[key]=document.getElementById('notes-input')?.value||'';
+    scheduleSave('notes');
+  },800);
 };
 
 window.resetDay=()=>{S.daily_chk[current]={};scheduleSave('daily_chk');buildView();};
@@ -517,9 +461,9 @@ document.addEventListener('click',()=>{
   if(openDayMenu){const dd=document.getElementById('dd_'+openDayMenu);if(dd)dd.style.display='none';openDayMenu=null;}
 });
 
-// ── PWA service worker ──
 if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
 
+loadAll();
 loadAll();
 </script>
 </body>
